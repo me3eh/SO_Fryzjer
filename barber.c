@@ -87,10 +87,10 @@ ListElement_type *head_service;
 ///////////////////////////////////////////////
 void print_results(int resign0_serviced1){
     pthread_mutex_lock(&Seats);
-    if(actual_id == 0)
-        printf("\nRes:%d WRomm: %d/%d [in: none]", res, WRoom, waiting_room_chairs);
-    else
-        printf("\nRes:%d WRomm: %d/%d [in: %d]", res, WRoom, waiting_room_chairs, actual_id);
+    // if(actual_id == 0)
+        // printf("\nRes:%d WRomm: %d/%d [in: none]", res, WRoom, waiting_room_chairs);
+    // else
+    printf("\nRes:%d WRomm: %d/%d [in: %d]", res, WRoom, waiting_room_chairs, actual_id);
     if(debug == 1){
         if(resign0_serviced1 == 0)
             show(head_resign, resign0_serviced1);
@@ -104,16 +104,19 @@ void print_results(int resign0_serviced1){
 void *Barber(void *arg) {
 	while(1) {
 			/* waits for a customer (sleeps). */
+            if(WRoom == 0)
+                printf("Barber sleeps");
             sem_wait(&Customers);
             sem_wait(&mod_seats);
 
             --WRoom;
             actual_id = id;
-
             print_results(1);
+            // actual_id = 0;
             sem_post(&mod_seats);
-            usleep(30000 + rand()%150000);
-
+            usleep(30000 + rand()%100000);
+            
+            // sem_wait(&Barbers);        
 	}
 }
 
@@ -131,6 +134,7 @@ void * Customer(void * arg) {
 				/* notify the barber. */
                 sem_post(&Customers);
                 sem_post(&mod_seats);
+                // sem_post(&Barbers);        
 				
 				/* release the lock */
 				
