@@ -12,7 +12,7 @@ int res = 0;
 int ser = 0;
 int WRoom = 0;
 int actual_id = 0;
-int id = 0;
+int id = 1;
 sem_t Customers;
 sem_t Barbers;
 sem_t mod_seats;
@@ -60,17 +60,37 @@ void push_front(ListElement_type **head, int number, int resign_serviced)
         }
     }
 }
-int pop_front(ListElement_type **head)
+void push_front_queue(ListElement_type **head, int number)
+{
+    if(WRoom == 0){
+        (*head)->data = number;
+        ++WRoom;
+        return;
+    }
+    if(WRoom > 0){
+        ListElement_type *current;
+        current=(ListElement_type *)malloc(sizeof(ListElement_type));
+        current->data=number;
+        current->next=(*head);
+        ++WRoom;
+        *head=current;
+    }
+}
+int pop_front_queue(ListElement_type **head)
 {
     int i;
     ListElement_type * tmp=NULL;
-    if (*head!=NULL) {
+    if (*head!=NULL && WRoom != 0) {
         i = (*head)->data;
-   	    tmp=(*head)->next;
-   	    free(*head);
-   	    *head=tmp;	
+        if( (*head)->next !=NULL){
+   	        tmp=(*head)->next;
+            free(*head);
+           *head=tmp;
+        }
+        --WRoom;
+        return i;
 	}
-    return i;
+    return -1;
 }
 
 //resign 0, serviced 1
@@ -94,6 +114,7 @@ void show(ListElement_type *head, int resign_serviced)
 }
 ListElement_type *head_resign; 
 ListElement_type *head_service;
+ListElement_type *waiting_room_people;
 ///////////////////////////////////////////////
 void print_results(int resign0_serviced1){
 
@@ -112,13 +133,12 @@ void *Barber(void *arg) {
 	while(1) {
 			/* waits for a customer (sleeps). */
             if(WRoom == 0)
-                printf("Barber sleeps");
+                printf("\n Barber sleeps \n");
             sem_wait(&Customers);
             pthread_mutex_lock(&Seats);
 
             ++ser;
-            --WRoom;
-            actual_id = id;
+            actual_id = pop_front_queue(&waiting_room_people);
             print_results(1);
             pthread_mutex_unlock(&Seats);
             // usleep(30000 + rand()%100000);
@@ -136,9 +156,9 @@ void * Customer(void * arg) {
 
             if(WRoom < waiting_room_chairs) {
 				/* sitting down.*/
-				++WRoom;
-				++id;
+                push_front_queue(&waiting_room_people, id);
                 push_front( &head_service, id, 1);
+                ++id;
 				/* notify the barber. */
                 print_results(1);
                 sem_post(&Customers);
@@ -153,10 +173,10 @@ void * Customer(void * arg) {
             else
             {
 				/* release the lock */
-                ++id;
                 ++res;
                 print_results(0);
                 push_front( &head_resign, id, 0);
+                ++id;
                 pthread_mutex_unlock(&Seats);
 			}
 	}
@@ -179,6 +199,7 @@ int main(int argc, char ** argv){
 
     head_resign = (ListElement_type *)malloc(sizeof(ListElement_type));
     head_service = (ListElement_type *)malloc(sizeof(ListElement_type));
+    waiting_room_people = (ListElement_type *)malloc(sizeof(ListElement_type));
 
     sem_init(&Customers, 0, 0);
     // sem_init(&mod_seats, 0, 1);
