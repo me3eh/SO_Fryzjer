@@ -8,15 +8,14 @@
 
 unsigned int waiting_room_chairs;
 pthread_t customer, barber;
-unsigned int total_customers;
 int res = 0;
+int ser = 0;
 int WRoom = 0;
 int actual_id = 0;
-int id=0;
+int id = 0;
 sem_t Customers;
 sem_t Barbers;
 sem_t mod_seats;
-pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t Seats = PTHREAD_MUTEX_INITIALIZER;
 
 int size_serviced = 0;
@@ -61,7 +60,18 @@ void push_front(ListElement_type **head, int number, int resign_serviced)
         }
     }
 }
-
+int pop_front(ListElement_type **head)
+{
+    int i;
+    ListElement_type * tmp=NULL;
+    if (*head!=NULL) {
+        i = (*head)->data;
+   	    tmp=(*head)->next;
+   	    free(*head);
+   	    *head=tmp;	
+	}
+    return i;
+}
 
 //resign 0, serviced 1
 void show(ListElement_type *head, int resign_serviced)
@@ -86,18 +96,15 @@ ListElement_type *head_resign;
 ListElement_type *head_service;
 ///////////////////////////////////////////////
 void print_results(int resign0_serviced1){
-    pthread_mutex_lock(&Seats);
-    // if(actual_id == 0)
-        // printf("\nRes:%d WRomm: %d/%d [in: none]", res, WRoom, waiting_room_chairs);
-    // else
-    printf("\nRes:%d WRomm: %d/%d [in: %d]", res, WRoom, waiting_room_chairs, actual_id);
+
+    printf("\nRes:%d WRomm: %d/%d [in: %d] Ser:%d", res, WRoom, waiting_room_chairs, actual_id, ser);
     if(debug == 1){
         if(resign0_serviced1 == 0)
             show(head_resign, resign0_serviced1);
         if(resign0_serviced1 == 1)
             show(head_service, resign0_serviced1);
     }
-    pthread_mutex_unlock(&Seats);
+    // pthread_mutex_unlock(&Seats);
 
 }
 
@@ -107,14 +114,14 @@ void *Barber(void *arg) {
             if(WRoom == 0)
                 printf("Barber sleeps");
             sem_wait(&Customers);
-            sem_wait(&mod_seats);
+            pthread_mutex_lock(&Seats);
 
+            ++ser;
             --WRoom;
             actual_id = id;
             print_results(1);
-            // actual_id = 0;
-            sem_post(&mod_seats);
-            usleep(30000 + rand()%100000);
+            pthread_mutex_unlock(&Seats);
+            // usleep(30000 + rand()%100000);
             
             // sem_wait(&Barbers);        
 	}
@@ -122,28 +129,27 @@ void *Barber(void *arg) {
 
 void * Customer(void * arg) {
 	while(1) {
-            usleep(rand()%200000);
+            // usleep(rand()%200000);
 			/* protects seats so only 1 customer tries to sit
 			in a chair if that's the case.*/
-            sem_wait(&mod_seats);
+            pthread_mutex_lock(&Seats);
+
             if(WRoom < waiting_room_chairs) {
 				/* sitting down.*/
 				++WRoom;
 				++id;
                 push_front( &head_service, id, 1);
 				/* notify the barber. */
+                print_results(1);
                 sem_post(&Customers);
-                sem_post(&mod_seats);
-                // sem_post(&Barbers);        
+                // sem_post(&mod_seats);
+                pthread_mutex_unlock(&Seats);
 				
 				/* release the lock */
 				
 				/* wait in the waiting room if barber is busy. */
-                // printf("%d == WRoom:%d\n", id, WRoom);
-                print_results(1);
 				// customer is having hair cut
 			}
-            // if(WRoom >= waiting_room_chairs)
             else
             {
 				/* release the lock */
@@ -151,36 +157,31 @@ void * Customer(void * arg) {
                 ++res;
                 print_results(0);
                 push_front( &head_resign, id, 0);
-                sem_post(&mod_seats);
-                // pthread_mutex_unlock(&Seats);
+                pthread_mutex_unlock(&Seats);
 			}
 	}
 }
 
 int main(int argc, char ** argv){
     srand(time(NULL));
-    sem_init(&Barbers, 0, 0);
-    sem_init(&Customers, 0, 0);
-    sem_init(&mod_seats, 0, 1);
-
+    
     if(argc >= 2)
-        if(strcmp(argv[1], "-debug") == 0){
+        if(strcmp(argv[1], "-debug") == 0)
             debug = 1;
-            printf("ssssssssssssssssssssssssssssssssssssssssssssssssssssssssss");
-        }
-    head_resign = (ListElement_type *)malloc(sizeof(ListElement_type));
-    head_service = (ListElement_type *)malloc(sizeof(ListElement_type));
+
     printf("Please enter the number of seats: \n");
     scanf("%d", &waiting_room_chairs);
-    
-    printf("Please enter the total customers: \n");
-    scanf("%d", &total_customers);
 
-    if(total_customers <= 0 || waiting_room_chairs <= 0){
+    if(waiting_room_chairs <= 0){
         printf("Entered numbers aren't positive.");
         exit(EXIT_FAILURE);
     }
 
+    head_resign = (ListElement_type *)malloc(sizeof(ListElement_type));
+    head_service = (ListElement_type *)malloc(sizeof(ListElement_type));
+
+    sem_init(&Customers, 0, 0);
+    // sem_init(&mod_seats, 0, 1);
 
     if( (pthread_create(&barber, NULL, &Barber, NULL) ) ){
         printf("Thread creation failed: \n");
@@ -193,6 +194,6 @@ int main(int argc, char ** argv){
     pthread_join(customer, NULL);
     pthread_join(barber, NULL);
     sem_destroy(&Customers);
-    sem_destroy(&Barbers);
+    // sem_destroy(&Barbers);
 
 }
