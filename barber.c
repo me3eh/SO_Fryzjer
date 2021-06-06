@@ -12,15 +12,13 @@
 #define NO_OF_THREADS 500
 void * barber_function(void *idp);
 void * customer_function(void *idp);
-void service_customer();
-void * make_customer_function();
 
 //mutexy
 pthread_mutex_t srvCust, mutex_controlling_list;
 //semafory
 sem_t barber_ready, customer_ready;
 //wszystkie zmienne
-int chair_cnt, ended = 0, all_clients = 0, id = 0, WRoom=0, actual_id = 0, no_served_custs = 0, served = 0, debug = 0;
+int chair_cnt, id = 0, WRoom=0, actual_id = 0, no_served_custs = 0, served = 0, debug = 0;
 
 //lista trzymajaca klientow - kolejka
 typedef struct ListElement {
@@ -30,7 +28,7 @@ typedef struct ListElement {
 
 //deklaracja list
 ListElement_type *head_resign; 
-ListElement_type *head_service;
+// ListElement_type *head_service;
 ListElement_type *waiting_room_people;
 
 void show(ListElement_type *head){
@@ -87,13 +85,22 @@ void print_results(){
     if(debug == 1){
         printf("\nPeople, who resigned");
         show(head_resign);
-        printf("People, who was serviced");
-        show(head_service);
+        printf("People, in queue");
+        show(waiting_room_people);
     }
 }
 
 void push_back_queue(ListElement_type **head, int number){
-    pthread_mutex_lock(&mutex_controlling_list);
+    if(*head == NULL){
+        *head = (ListElement_type *)malloc(sizeof(ListElement_type));
+        if (*head == NULL){
+            perror("Allocation:");
+            exit(EXIT_FAILURE);
+        }
+        (*head)->data = number;
+        (*head)->next = NULL;
+    }
+    else{
         ListElement_type *current = *head;
         while (current->next != NULL)
             current = current->next;
@@ -104,7 +111,7 @@ void push_back_queue(ListElement_type **head, int number){
         }
         current->next->data = number;
         current->next->next = NULL;
-        pthread_mutex_unlock(&mutex_controlling_list);
+    }
 }
 
 int pop_front_queue(ListElement_type **head){
@@ -131,11 +138,11 @@ void * barber_function(void *idp){
             exit(EXIT_FAILURE);
         }
         actual_id = pop_front_queue(&waiting_room_people);
-        push_front(&head_service, actual_id, 1);
+        // push_front(&head_service, actual_id, 1);
         --WRoom; 
-        ++all_clients; 
+        // ++all_clients; 
         ++served;
-        printf("\nRes:%d WRomm: %d/%d [in: %d], Served:%d. All:%d", no_served_custs, WRoom, chair_cnt, actual_id, served, all_clients);
+        printf("\nRes:%d WRomm: %d/%d [in: %d]", no_served_custs, WRoom, chair_cnt, actual_id);
         print_results();
 
         pthread_mutex_unlock(&srvCust);
@@ -154,7 +161,7 @@ void * customer_function(void *idp){
         push_back_queue(&waiting_room_people, id);
         ++WRoom;
         ++id;
-        printf("\nRes:%d WRomm: %d/%d [in: %d], Served:%d. All:%d", no_served_custs, WRoom, chair_cnt, actual_id, served, all_clients);            
+        printf("\nRes:%d WRomm: %d/%d [in: %d]", no_served_custs, WRoom, chair_cnt, actual_id);            
         print_results();
         sem_post(&customer_ready);
 
@@ -164,11 +171,11 @@ void * customer_function(void *idp){
     }
     else
     {
-        ++all_clients;
+        // ++all_clients;
         push_front(&head_resign, id, 0);
         ++id;
         ++no_served_custs;
-        printf("\nRes:%d WRomm: %d/%d [in: %d], Served:%d. All:%d", no_served_custs, WRoom, chair_cnt, actual_id, served, all_clients);
+        printf("\nRes:%d WRomm: %d/%d [in: %d]", no_served_custs, WRoom, chair_cnt, actual_id);
         print_results();
         pthread_mutex_unlock(&srvCust);
     }
@@ -189,12 +196,11 @@ int main(int argc, char**argv){
         exit(EXIT_FAILURE);
     }
 
-    srand(time(NULL));
     pthread_t barber_1;
     int tmp;
-    waiting_room_people = (ListElement_type *)malloc(sizeof(ListElement_type));
+    // waiting_room_people = (ListElement_type *)malloc(sizeof(ListElement_type));
     head_resign = (ListElement_type *)malloc(sizeof(ListElement_type));
-    head_service = (ListElement_type *)malloc(sizeof(ListElement_type));
+    // head_service = (ListElement_type *)malloc(sizeof(ListElement_type));
 
     pthread_mutex_init(&srvCust, NULL);
 

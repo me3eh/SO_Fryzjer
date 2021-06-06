@@ -2,18 +2,19 @@
 #include <stdio.h>
 #include <pthread.h>
 #include <time.h>
+#include <string.h>
+#include <unistd.h>
 
 #define TRUE 1
+#define FALSE 0
+#define NO_OF_THREADS 20
 
-pthread_mutex_t mutex;
+pthread_mutex_t mutex, mutex_controlling_list;
 pthread_cond_t fill, empty;
-int no_served_custs = 0, WRoom = 0, chair_cnt, served = 0, all_clients = 0, actual_id = 0, int debug = 0;
-void* producer(void*);
-void* consumer(void*);
-
-void initialize_variables();
-void insert(void);
-void remove_item(void);
+int no_served_custs = 0, WRoom = 0, chair_cnt, served = 0, all_clients = 0, actual_id = 0, debug = 0, id = 0;
+int now_serving=0, next_ticket=0;
+void* customer_function(void*);
+void* barber_function(void*);
 
 typedef struct ListElement {
     int data;
@@ -21,70 +22,95 @@ typedef struct ListElement {
 } ListElement_type;
 ListElement_type *waiting_room_people;
 ListElement_type *head_resign; 
-ListElement_type *head_service;
-//dla rezygnujacych resign_serviced == 0, dla obsluzenych resign_service == 1
-void push_front(ListElement_type **head, int number, int resign_serviced)
-{
-    if(resign_serviced == 0){
-        if(size_serviced == 0){
-            (*head)->data = number;
-            ++size_serviced;
-            return;
-        }
-        if(size_serviced > 0){
-            ListElement_type *current;
-            current=(ListElement_type *)malloc(sizeof(ListElement_type));
-            current->data=number;
-            current->next=(*head);
-            *head=current;
-            ++size_serviced;
-        }
+
+void show(ListElement_type *head){
+    printf("\n");
+    if(head==NULL)
+        printf("List is empty\n");
+    else{
+        ListElement_type *current=head;
+        do{
+            printf("%i ", current->data);
+            current = current->next;
+        }while (current != NULL);
+        printf("\n");
     }
-    if(resign_serviced == 1){
-        if(size_resigned == 0){
-            (*head)->data = number;
-            ++size_resigned;
-            return;
-        }
-        if(size_resigned > 0){
-            ListElement_type *current;
-            current=(ListElement_type *)malloc(sizeof(ListElement_type));
-            current->data=number;
-            current->next=(*head);
-            *head=current;
-            ++size_resigned;
-        }
+}
+void print_results(){
+    if(debug == 1){
+        printf("\nPeople, who resigned");
+        show(head_resign);
+        printf("People, in queue");
+        show(waiting_room_people);
     }
 }
 
+void push_front(ListElement_type **head, int number){
+    pthread_mutex_lock(&mutex_controlling_list);
+        if(*head == NULL){
+            *head = (ListElement_type *)malloc(sizeof(ListElement_type));
+            if((*head) == NULL){
+                perror("Allocation:");
+                exit(EXIT_FAILURE);
+            } 
+            (*head)->data = number;
+            pthread_mutex_unlock(&mutex_controlling_list);
+            return;
+        }
+        else{
+            ListElement_type *current;
+            current=(ListElement_type *)malloc(sizeof(ListElement_type));
+            if( current == NULL ){
+                perror("Allocation:");
+                exit(EXIT_FAILURE);
+            }
+            current->data=number;
+            current->next=(*head);
+            *head=current;
+            pthread_mutex_unlock(&mutex_controlling_list);
+            return;
+        }
+}
+
 void push_back_queue(ListElement_type **head, int number){
+    pthread_mutex_lock(&mutex_controlling_list);
     if(*head == NULL){
         *head = (ListElement_type *)malloc(sizeof(ListElement_type));
+        if((*head) == NULL){
+            perror("Allocation:");
+            exit(EXIT_FAILURE);
+        } 
         (*head)->data = number;
         (*head)->next = NULL;
+        pthread_mutex_unlock(&mutex_controlling_list);
+        return;
     }
     else{
         ListElement_type *current = *head;
         while (current->next != NULL)
             current = current->next;
         current->next = (ListElement_type *)malloc(sizeof(ListElement_type));
+        if(current->next == NULL){
+            perror("Allocation:");
+            exit(EXIT_FAILURE);
+        } 
         current->next->data = number;
         current->next->next = NULL;
+        pthread_mutex_unlock(&mutex_controlling_list);
+        return;
     }
-    ++WRoom;
 }
 
 int pop_front_queue(ListElement_type **head){
     int i;
     ListElement_type * tmp=NULL;
-    if (*head!=NULL && WRoom != 0) {
+    if (*head!=NULL) {
         i = (*head)->data;
         if( (*head)->next !=NULL){
             tmp=(*head)->next;
             free(*head);
-        *head=tmp;
+            *head=tmp;
         }
-        --WRoom;
         return i;
     }
     return -1;
@@ -92,54 +118,59 @@ int pop_front_queue(ListElement_type **head){
 
 
 
-void* producer(void* arg){
+void* customer_function(void* arg){
+
     pthread_mutex_lock(&mutex);
     if (WRoom < chair_cnt){
-        // while(WRoom == chair_cnt){
-        //     pthread_cond_wait(&empty,&mutex);
-        // }
-        push_back_queue(&waiting_room_people, all_clients);
+        int my_ticket=next_ticket++;
+        push_back_queue(&waiting_room_people, id);
+        ++WRoom;
         ++all_clients;
-        printf("\nRes:%d WRomm: %d/%d [in: %d], Served:%d. All:%d", no_served_custs, WRoom, chair_cnt, actual_id, served, all_clients);
+        ++id;
+        pthread_cond_signal(&fill);
+        printf("\n\n----->%d", my_ticket);
+        while(my_ticket != now_serving)
+            pthread_cond_wait(&empty,&mutex);
+        ++now_serving;
+        printf("\n\n----->%d", now_serving);
+                
+        printf("\nRes:%d WRomm: %d/%d [in: %d]", no_served_custs, WRoom, chair_cnt, actual_id);
+        print_results();
         pthread_mutex_unlock(&mutex);
+
     }
     else{
-        ++no_served_custs;
         ++all_clients;
-        printf("\nRes:%d WRomm: %d/%d [in: %d], Served:%d. All:%d", no_served_custs, WRoom, chair_cnt, actual_id, served, all_clients);
-        pthread_cond_signal(&fill);
+        push_front(&head_resign, id);
+        ++no_served_custs;
+        ++id;
+        printf("\nRes:%d WRomm: %d/%d [in: %d]", no_served_custs, WRoom, chair_cnt, actual_id);
+        print_results();
         pthread_mutex_unlock(&mutex);
 
     }
     pthread_exit(NULL);
+
 }
 
-void* consumer(void* arg){
-    int kid;
+void* barber_function(void* arg){
     while(TRUE){
         pthread_mutex_lock(&mutex);
-            while(WRoom==0){
-                pthread_cond_wait(&fill,&mutex);
-            }
-
-            kid = pop_front_queue(&waiting_room_people);
-            actual_id = kid;
-            ++served;
-            printf("\nRes:%d WRomm: %d/%d [in: %d], Served:%d. All:%d", no_served_custs, WRoom, chair_cnt, kid, served, all_clients);            
-            pthread_cond_broadcast(&empty);
-
+        // pthread_cond_broadcast(&empty);
+        while(WRoom==0)
+            pthread_cond_wait(&fill, &mutex);
+        actual_id = pop_front_queue(&waiting_room_people);
+        --WRoom;
+        ++served;
+        printf("\nRes:%d WRomm: %d/%d [in: %d]", no_served_custs, WRoom, chair_cnt, actual_id);            
+        print_results();
+        pthread_cond_broadcast(&empty);
         pthread_mutex_unlock(&mutex);
-
     }
+    pthread_exit(NULL);    
 }
 int main(int argc, char *argv[]) {
-
     pthread_t barber;
-    waiting_room_people = (ListElement_type *)malloc(sizeof(ListElement_type));
-    if(waiting_room_people == NULL){
-        perror("While allocating memory");
-        exit(1);
-    }
     srand( time(NULL) );
     
     if(argc >= 2)
@@ -150,23 +181,26 @@ int main(int argc, char *argv[]) {
     scanf("%d", &chair_cnt);
 
     pthread_mutex_init(&mutex,NULL);
+    pthread_mutex_init(&mutex_controlling_list, NULL);
     pthread_cond_init(&empty, NULL);
     pthread_cond_init(&fill, NULL);
 
-    if(pthread_create(&barber, NULL, consumer, NULL))
-        exit(2);
+    
+    pthread_t customer_thread[NO_OF_THREADS];
 
-    while(TRUE){
-        pthread_t customer[500];
-        for(int i=0; i< 500; ++i){
-            if(pthread_create(&customer[i],NULL,producer,NULL))
-                exit(1);
+    if(pthread_create(&barber, NULL, barber_function, NULL)){
+            printf("Failed to create thread.");
+            exit(EXIT_FAILURE);
         }
-        for(int i=0; i< 500; ++i){
-            pthread_join(customer[i], NULL);
+    int tmp;
+    while(1){
+        for(int counter = 0 ; counter < NO_OF_THREADS; ++counter){
+            tmp = pthread_create(&customer_thread[counter], NULL, (void *)customer_function, NULL);
+            if(tmp)
+                printf("Failed to create thread.");
         }
+        for(int counter = 0 ; counter < NO_OF_THREADS ; ++counter)
+            pthread_join(customer_thread[counter], NULL);
     }
-
-    printf("Exit the program\n");
     return 0;
 }
