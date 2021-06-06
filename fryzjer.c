@@ -6,7 +6,6 @@
 #include <unistd.h>
 
 #define TRUE 1
-#define FALSE 0
 #define NO_OF_THREADS 20
 
 pthread_mutex_t mutex, mutex_controlling_list;
@@ -44,7 +43,6 @@ void print_results(){
         show(waiting_room_people);
     }
 }
-
 void push_front(ListElement_type **head, int number){
     pthread_mutex_lock(&mutex_controlling_list);
         if(*head == NULL){
@@ -111,6 +109,10 @@ int pop_front_queue(ListElement_type **head){
             free(*head);
             *head=tmp;
         }
+        else{
+            free(*head);
+            *head = NULL;
+        }
         return i;
     }
     return -1;
@@ -122,13 +124,15 @@ void* customer_function(void* arg){
 
     pthread_mutex_lock(&mutex);
     if (WRoom < chair_cnt){
-        int my_ticket=next_ticket++;
+        int my_ticket = next_ticket++;
         push_back_queue(&waiting_room_people, id);
         ++WRoom;
         ++all_clients;
         ++id;
         pthread_cond_signal(&fill);
         printf("\n\n----->%d", my_ticket);
+        //usypianie
+        usleep(rand()%1000000);
         while(my_ticket != now_serving)
             pthread_cond_wait(&empty,&mutex);
         ++now_serving;
@@ -144,19 +148,19 @@ void* customer_function(void* arg){
         push_front(&head_resign, id);
         ++no_served_custs;
         ++id;
+        //usypianie
+        usleep(rand()%1000000);
+
         printf("\nRes:%d WRomm: %d/%d [in: %d]", no_served_custs, WRoom, chair_cnt, actual_id);
         print_results();
         pthread_mutex_unlock(&mutex);
-
     }
     pthread_exit(NULL);
-
 }
 
 void* barber_function(void* arg){
     while(TRUE){
         pthread_mutex_lock(&mutex);
-        // pthread_cond_broadcast(&empty);
         while(WRoom==0)
             pthread_cond_wait(&fill, &mutex);
         actual_id = pop_front_queue(&waiting_room_people);
@@ -164,6 +168,8 @@ void* barber_function(void* arg){
         ++served;
         printf("\nRes:%d WRomm: %d/%d [in: %d]", no_served_custs, WRoom, chair_cnt, actual_id);            
         print_results();
+        //usypianie
+        usleep(rand()%1000000);
         pthread_cond_broadcast(&empty);
         pthread_mutex_unlock(&mutex);
     }
@@ -193,7 +199,7 @@ int main(int argc, char *argv[]) {
             exit(EXIT_FAILURE);
         }
     int tmp;
-    while(1){
+    while(TRUE){
         for(int counter = 0 ; counter < NO_OF_THREADS; ++counter){
             tmp = pthread_create(&customer_thread[counter], NULL, (void *)customer_function, NULL);
             if(tmp)

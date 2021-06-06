@@ -9,7 +9,8 @@
 #include <sys/types.h>
 #include <sys/time.h>
 
-#define NO_OF_THREADS 500
+#define NO_OF_THREADS 20
+#define TRUE 1
 void * barber_function(void *idp);
 void * customer_function(void *idp);
 
@@ -34,7 +35,7 @@ ListElement_type *waiting_room_people;
 void show(ListElement_type *head){
     printf("\n");
     if(head==NULL)
-        printf("List is empty");
+        printf("List is empty\n");
     else{
         ListElement_type *current=head;
         do{
@@ -45,39 +46,30 @@ void show(ListElement_type *head){
     }
 }
 
-void push_front(ListElement_type **head, int number, int resign_serviced){
+void push_front(ListElement_type **head, int number){
     pthread_mutex_lock(&mutex_controlling_list);
-    if(resign_serviced == 0){
-        if(no_served_custs == 0){
-            (*head)->data = number;
-            pthread_mutex_unlock(&mutex_controlling_list);
-            return;
-        }
-        if(no_served_custs > 0){
-            ListElement_type *current;
-            current=(ListElement_type *)malloc(sizeof(ListElement_type));
-            current->data=number;
-            current->next=(*head);
-            *head=current;
-            pthread_mutex_unlock(&mutex_controlling_list);
-            return;
-        }
+    if(*head == NULL){
+        *head = (ListElement_type *)malloc(sizeof(ListElement_type));
+        if(*head == NULL){
+            perror("Allocation");
+            exit(EXIT_FAILURE);
+        } 
+        (*head)->data = number;
+        pthread_mutex_unlock(&mutex_controlling_list);
+        return;
     }
-    if(resign_serviced == 1){
-        if(served == 0){
-            (*head)->data = number;
-            pthread_mutex_unlock(&mutex_controlling_list);
-            return;
+    if(no_served_custs > 0){
+        ListElement_type *current;
+        current=(ListElement_type *)malloc(sizeof(ListElement_type));
+        if(current == NULL){
+            perror("Allocation");
+            exit(EXIT_FAILURE);
         }
-        if(served > 0){
-            ListElement_type *current;
-            current = (ListElement_type *)malloc(sizeof(ListElement_type));
-            current->data = number;
-            current->next = (*head);
-            *head = current;
-            pthread_mutex_unlock(&mutex_controlling_list);
-            return;
-        }
+        current->data=number;
+        current->next=(*head);
+        *head=current;
+        pthread_mutex_unlock(&mutex_controlling_list);
+        return;
     }
 }
 
@@ -91,6 +83,7 @@ void print_results(){
 }
 
 void push_back_queue(ListElement_type **head, int number){
+    pthread_mutex_lock(&mutex_controlling_list);
     if(*head == NULL){
         *head = (ListElement_type *)malloc(sizeof(ListElement_type));
         if (*head == NULL){
@@ -112,41 +105,47 @@ void push_back_queue(ListElement_type **head, int number){
         current->next->data = number;
         current->next->next = NULL;
     }
+    pthread_mutex_unlock(&mutex_controlling_list);
 }
 
 int pop_front_queue(ListElement_type **head){
+    pthread_mutex_lock(&mutex_controlling_list);
+
     int i;
     ListElement_type * tmp=NULL;
-    if (*head!=NULL && WRoom != 0) {
+    if (*head!=NULL) {
         i = (*head)->data;
         if( (*head)->next !=NULL){
    	        tmp=(*head)->next;
             free(*head);
            *head=tmp;
         }
+        else{
+            free(*head);
+            *head = NULL;
+        }
+        pthread_mutex_unlock(&mutex_controlling_list);
         return i;
 	}
+    pthread_mutex_unlock(&mutex_controlling_list);
     return -1;
 }
 
 void * barber_function(void *idp){        
-    while(1){
+    while(TRUE){
         sem_wait(&customer_ready);
         pthread_mutex_lock(&srvCust);
-        if(errno != 0){
-            perror("Hi");
-            exit(EXIT_FAILURE);
-        }
+
         actual_id = pop_front_queue(&waiting_room_people);
-        // push_front(&head_service, actual_id, 1);
+
         --WRoom; 
-        // ++all_clients; 
+
         ++served;
         printf("\nRes:%d WRomm: %d/%d [in: %d]", no_served_custs, WRoom, chair_cnt, actual_id);
         print_results();
 
         pthread_mutex_unlock(&srvCust);
-
+        usleep(rand()%1000000);
         sem_post(&barber_ready);        
         
     }
@@ -155,30 +154,36 @@ void * barber_function(void *idp){
 
 void * customer_function(void *idp){  
     pthread_mutex_lock(&srvCust);
+    printf("---%d", WRoom);
 
-    if(WRoom < chair_cnt)
-    {
-        push_back_queue(&waiting_room_people, id);
+    printf("==%d", chair_cnt);
+    if(WRoom < chair_cnt){
+        sem_post(&customer_ready);
         ++WRoom;
+        // printf("---%d", WRoom);
+        usleep(rand()%1000000);
+
+        push_back_queue(&waiting_room_people, id);
         ++id;
         printf("\nRes:%d WRomm: %d/%d [in: %d]", no_served_custs, WRoom, chair_cnt, actual_id);            
         print_results();
-        sem_post(&customer_ready);
 
         pthread_mutex_unlock(&srvCust);
-
         sem_wait(&barber_ready); 
+
     }
-    else
-    {
-        // ++all_clients;
-        push_front(&head_resign, id, 0);
+    else{
+        //  sem_post(&customer_ready);
+        push_front(&head_resign, id);
         ++id;
+        usleep(rand()%1000000);
         ++no_served_custs;
         printf("\nRes:%d WRomm: %d/%d [in: %d]", no_served_custs, WRoom, chair_cnt, actual_id);
         print_results();
         pthread_mutex_unlock(&srvCust);
     }
+    // sem_wait(&barber_ready); 
+
     pthread_exit(NULL);
 }
 
@@ -199,14 +204,13 @@ int main(int argc, char**argv){
     pthread_t barber_1;
     int tmp;
     // waiting_room_people = (ListElement_type *)malloc(sizeof(ListElement_type));
-    head_resign = (ListElement_type *)malloc(sizeof(ListElement_type));
+    // head_resign = (ListElement_type *)malloc(sizeof(ListElement_type));
     // head_service = (ListElement_type *)malloc(sizeof(ListElement_type));
 
     pthread_mutex_init(&srvCust, NULL);
 
     sem_init(&customer_ready, 0, 0);
     sem_init(&barber_ready, 0, 0);
-    pthread_mutex_init(&srvCust,NULL);
     pthread_mutex_init(&mutex_controlling_list, NULL);
     
     
@@ -214,7 +218,7 @@ int main(int argc, char**argv){
     tmp = pthread_create(&barber_1, NULL, (void *)barber_function, NULL);  
     if(tmp)
         printf("Failed to create thread."); 
-    while(1){
+    while(TRUE){
         pthread_t customer_thread[NO_OF_THREADS];
         for(int counter = 0 ; counter < NO_OF_THREADS; ++counter){
             tmp = pthread_create(&customer_thread[counter], NULL, (void *)customer_function, NULL);
