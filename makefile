@@ -1,4 +1,4 @@
 com1:
-	gcc barber.c -o barber -pthread -Wall
+	gcc barber_semaphores.c -o barber -pthread -Wall
 com2:
-	gcc fryzjer.c -o barber2 -pthread -Wall
+	gcc barber_condition_variables.c -o barber2 -pthread -Wall
